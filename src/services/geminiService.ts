@@ -69,12 +69,13 @@ export async function modifyConfigFile(intent: string, currentFileContent: strin
     ${currentFileContent}
     
     Requirements:
-    1. Output ONLY the complete updated file content.
-    2. IDEMPOTENCY CHECK: Do NOT add a rule if a functionally identical one already exists in the file content. 
-    3. Maintain the structure (e.g., *filter, :INPUT ACCEPT, COMMIT).
-    4. Ensure no existing critical rules (like SSH access) are accidentally removed unless explicitly requested.
-    5. If the request is already satisfied by existing rules, return the original content without changes.
-    6. If the request is impossible or highly dangerous, start the response with "ERROR: ".
+    1. Output ONLY the complete updated file content in standard iptables-save format.
+    2. DO NOT use the "iptables" command prefix. Rules must start with "-A", "-I", etc. (e.g., "-A INPUT -i lo -j ACCEPT").
+    3. Maintain the full structure: Start with "*filter", include chain policies (e.g., ":INPUT ACCEPT [0:0]"), and end with "COMMIT".
+    4. IDEMPOTENCY CHECK: Do NOT add a rule if a functionally identical one already exists.
+    5. Ensure no critical rules (like SSH/Port 22) are removed accidentally.
+    6. If the request is already satisfied, return the original content.
+    7. Start with "ERROR: " only if the request is impossible or dangerous.
   `;
 
   const response = await ai.models.generateContent({

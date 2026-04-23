@@ -175,14 +175,14 @@ export default function App() {
     setIsLoading(true);
     addLog(`Saving configuration to ${selectedMachine.configPath}...`);
     try {
-      // Use tee for safe root write
-      const escapedContent = contentToSave.replace(/'/g, "'\\''");
+      // Use base64 to avoid shell escaping issues with large config files
+      const base64Content = btoa(unescape(encodeURIComponent(contentToSave)));
       const writeRes = await fetch('/api/ssh/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...selectedMachine,
-          command: `echo '${escapedContent}' | sudo tee ${selectedMachine.configPath} > /dev/null`
+          command: `echo "${base64Content}" | base64 -d | sudo tee ${selectedMachine.configPath} > /dev/null`
         })
       });
       const writeData = await writeRes.json();
@@ -221,9 +221,12 @@ export default function App() {
         if (updatedConfig.startsWith('ERROR:')) {
            addLog(updatedConfig, 'error');
         } else {
-           addLog(`AI successfully modified the configuration file. Reviewing changes...`);
+           addLog(`AI successfully generated new configuration content.`);
            setConfigContent(updatedConfig);
-           addLog(`Configuration updated in editor. Click "SAVE & RESTART" to apply.`, 'info');
+           // Auto-trigger the save process with the newly generated content
+           setTimeout(() => {
+             handleSaveAndRestart(updatedConfig);
+           }, 500);
         }
       } else {
         const currentRaw = chains.map(c => `${c.name} (${c.policy})\n${c.rules.map(r => `${r.num} ${r.target} ${r.source} -> ${r.destination}`).join('\n')}`).join('\n\n');
@@ -458,10 +461,11 @@ export default function App() {
                     if(!configContent) fetchConfigFile();
                   }}
                   disabled={isLoading}
-                  className={`flex items-center gap-2 px-4 py-2 ${viewMode === 'config' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-white/10'} rounded-lg text-sm font-medium transition-colors border border-white/5`}
+                  className={`flex items-center gap-2 px-4 py-2 ${viewMode === 'config' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-white/10'} rounded-lg text-sm font-medium transition-colors border border-white/5 relative`}
                 >
                   <FileCode className="w-4 h-4" />
                   Config File
+                  <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-indigo-500 text-[8px] font-bold rounded-md animate-pulse">PERSISTENT</span>
                 </button>
                 
                 <div className="h-8 w-[1px] bg-white/10" />
