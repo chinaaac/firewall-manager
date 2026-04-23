@@ -10,6 +10,7 @@ import {
   Terminal, 
   Plus, 
   Trash2, 
+  Edit2,
   RefreshCw, 
   AlertTriangle, 
   Brain, 
@@ -31,36 +32,17 @@ import { Machine, Chain, IptablesRule } from './types';
 import { parseIptablesIntent, explainRules, modifyConfigFile } from './services/geminiService';
 
 export default function App() {
-  const [machines, setMachines] = useState<Machine[]>([
-    { 
-      id: '1', 
-      name: 'CentOS-Gateway', 
-      host: '192.168.1.1', 
-      port: 22, 
-      username: 'admin', 
-      tags: ['centos7.9', 'gateway'],
-      configPath: '/etc/sysconfig/iptables',
-      restartCommand: 'systemctl restart iptables'
-    },
-    { 
-      id: '2', 
-      name: 'CentOS-Web-01', 
-      host: '172.16.0.10', 
-      port: 22, 
-      username: 'root', 
-      tags: ['centos7.9', 'web'],
-      configPath: '/etc/sysconfig/iptables',
-      restartCommand: 'systemctl restart iptables'
-    }
-  ]);
+  const [machines, setMachines] = useState<Machine[]>([]);
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
   const [isAddingMachine, setIsAddingMachine] = useState(false);
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
+
   const [newMachine, setNewMachine] = useState({ 
     name: '', host: '', port: 22, username: '', password: '', 
     configPath: '/etc/sysconfig/iptables',
     restartCommand: 'systemctl restart iptables'
   });
-  
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [viewMode, setViewMode] = useState<'rules' | 'config'>('rules');
   const [configContent, setConfigContent] = useState('');
@@ -75,11 +57,88 @@ export default function App() {
   const selectedMachine = machines.find(m => m.id === selectedMachineId);
 
   useEffect(() => {
+    fetchMachines();
+  }, []);
+
+  useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
   const addLog = (msg: string, type: 'info' | 'error' | 'success' = 'info') => {
     setLogs(prev => [...prev, { msg: `[${new Date().toLocaleTimeString()}] ${msg}`, type }]);
+  };
+
+  const fetchMachines = async () => {
+    try {
+      const res = await fetch('/api/machines');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setMachines(data);
+    } catch (err: any) {
+      addLog(`Failed to fetch machines: ${err.message}`, 'error');
+    }
+  };
+
+  const handleSaveMachine = async () => {
+    try {
+      const url = editingMachineId ? `/api/machines/${editingMachineId}` : '/api/machines';
+      const method = editingMachineId ? 'PUT' : 'POST';
+      const machineData = {
+        ...newMachine,
+        id: editingMachineId || Date.now().toString()
+      };
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(machineData)
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      addLog(`Machine ${editingMachineId ? 'updated' : 'added'} successfully`, 'success');
+      fetchMachines();
+      setIsAddingMachine(false);
+      setEditingMachineId(null);
+      setNewMachine({ 
+        name: '', host: '', port: 22, username: '', password: '', 
+        configPath: '/etc/sysconfig/iptables',
+        restartCommand: 'systemctl restart iptables' 
+      });
+    } catch (err: any) {
+      addLog(`Failed to save machine: ${err.message}`, 'error');
+    }
+  };
+
+  const startEditMachine = (m: Machine, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNewMachine({
+      name: m.name,
+      host: m.host,
+      port: m.port,
+      username: m.username,
+      password: m.password,
+      configPath: m.configPath || '',
+      restartCommand: m.restartCommand || ''
+    });
+    setEditingMachineId(m.id);
+    setIsAddingMachine(true);
+  };
+
+  const deleteMachine = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this machine?')) return;
+    try {
+      const res = await fetch(`/api/machines/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      addLog('Machine deleted successfully', 'success');
+      if (selectedMachineId === id) setSelectedMachineId(null);
+      fetchMachines();
+    } catch (err: any) {
+      addLog(`Failed to delete machine: ${err.message}`, 'error');
+    }
   };
 
   const fetchRules = async () => {
@@ -223,10 +282,7 @@ export default function App() {
         } else {
            addLog(`AI successfully generated new configuration content.`);
            setConfigContent(updatedConfig);
-           // Auto-trigger the save process with the newly generated content
-           setTimeout(() => {
-             handleSaveAndRestart(updatedConfig);
-           }, 500);
+           addLog(`Please review the changes in the editor. Click "SAVE & RESTART" to write to disk and restart service.`, 'info');
         }
       } else {
         const currentRaw = chains.map(c => `${c.name} (${c.policy})\n${c.rules.map(r => `${r.num} ${r.target} ${r.source} -> ${r.destination}`).join('\n')}`).join('\n\n');
@@ -322,6 +378,9 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-3"
             >
+              <h3 className="text-sm font-bold text-sky-400 mb-2">
+                {editingMachineId ? 'Edit Node' : 'New Node'}
+              </h3>
               <input 
                 placeholder="Name" 
                 className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm outline-none focus:border-sky-500/50"
@@ -375,17 +434,16 @@ export default function App() {
               </div>
               <div className="flex gap-2 pt-2">
                 <button 
-                  onClick={() => {
-                    setMachines([...machines, { ...newMachine, id: Date.now().toString(), tags: [] }]);
-                    setIsAddingMachine(false);
-                    setNewMachine({ name: '', host: '', port: 22, username: '', password: '' });
-                  }}
+                  onClick={handleSaveMachine}
                   className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 rounded-lg text-xs"
                 >
-                  Save Node
+                  {editingMachineId ? 'Update' : 'Save Node'}
                 </button>
                 <button 
-                  onClick={() => setIsAddingMachine(false)}
+                  onClick={() => {
+                    setIsAddingMachine(false);
+                    setEditingMachineId(null);
+                  }}
                   className="px-4 bg-white/10 hover:bg-white/20 rounded-lg text-xs"
                 >
                   Cancel
@@ -395,10 +453,10 @@ export default function App() {
           )}
 
           {machines.map(m => (
-            <button 
+            <div 
               key={m.id}
               onClick={() => setSelectedMachineId(m.id)}
-              className={`w-full text-left p-4 rounded-xl border transition-all ${
+              className={`w-full text-left p-4 rounded-xl border transition-all cursor-pointer ${
                 selectedMachineId === m.id 
                   ? 'bg-sky-500/10 border-sky-500/50 shadow-[0_0_20px_rgba(56,189,248,0.1)]' 
                   : 'bg-white/5 border-transparent hover:border-white/10'
@@ -409,7 +467,21 @@ export default function App() {
                   <span className="font-semibold text-sm">{m.name}</span>
                   <span className="text-[10px] text-gray-400 font-mono">{m.host}</span>
                 </div>
-                <Server className={`w-4 h-4 ${selectedMachineId === m.id ? 'text-sky-400' : 'text-gray-500'}`} />
+                <div className="flex gap-2">
+                  <button 
+                    onClick={(e) => startEditMachine(m, e)}
+                    className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-sky-400 transition-colors"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                  <button 
+                    onClick={(e) => deleteMachine(m.id, e)}
+                    className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                  <Server className={`w-4 h-4 ${selectedMachineId === m.id ? 'text-sky-400' : 'text-gray-500'}`} />
+                </div>
               </div>
               <div className="flex flex-wrap gap-1 mt-3">
                 {m.tags.map(t => (
@@ -418,7 +490,7 @@ export default function App() {
                   </span>
                 ))}
               </div>
-            </button>
+            </div>
           ))}
         </div>
 

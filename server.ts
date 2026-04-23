@@ -3,6 +3,23 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import { Client } from "ssh2";
+import Database from "better-sqlite3";
+
+// Initialize Database
+const db = new Database("database.sqlite");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS machines (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER DEFAULT 22,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    configPath TEXT,
+    restartCommand TEXT,
+    tags TEXT
+  )
+`);
 
 async function startServer() {
   const app = express();
@@ -13,6 +30,59 @@ async function startServer() {
 
   // API Routes
   
+  // Machines CRUD
+  app.get("/api/machines", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT * FROM machines").all();
+      // Parse tags from stringified JSON
+      const machines = rows.map((row: any) => ({
+        ...row,
+        tags: JSON.parse(row.tags || "[]")
+      }));
+      res.json(machines);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/machines", (req, res) => {
+    const { id, name, host, port, username, password, configPath, restartCommand, tags } = req.body;
+    try {
+      db.prepare(`
+        INSERT INTO machines (id, name, host, port, username, password, configPath, restartCommand, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, name, host, port, username, password, configPath, restartCommand, JSON.stringify(tags || []));
+      res.status(201).json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/machines/:id", (req, res) => {
+    const { id } = req.params;
+    const { name, host, port, username, password, configPath, restartCommand, tags } = req.body;
+    try {
+      db.prepare(`
+        UPDATE machines 
+        SET name = ?, host = ?, port = ?, username = ?, password = ?, configPath = ?, restartCommand = ?, tags = ?
+        WHERE id = ?
+      `).run(name, host, port, username, password, configPath, restartCommand, JSON.stringify(tags || []), id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/machines/:id", (req, res) => {
+    const { id } = req.params;
+    try {
+      db.prepare("DELETE FROM machines WHERE id = ?").run(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
