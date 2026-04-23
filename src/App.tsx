@@ -46,6 +46,8 @@ export default function App() {
   const [chains, setChains] = useState<Chain[]>([]);
   const [viewMode, setViewMode] = useState<'rules' | 'config'>('rules');
   const [configContent, setConfigContent] = useState('');
+  const [originalConfigContent, setOriginalConfigContent] = useState('');
+  const [showDiff, setShowDiff] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<{msg: string, type: 'info' | 'error' | 'success'}[]>([]);
   const [aiInput, setAiInput] = useState('');
@@ -276,13 +278,15 @@ export default function App() {
     
     try {
       if (viewMode === 'config') {
+        setOriginalConfigContent(configContent);
         const updatedConfig = await modifyConfigFile(aiInput, configContent);
         if (updatedConfig.startsWith('ERROR:')) {
            addLog(updatedConfig, 'error');
         } else {
-           addLog(`AI successfully generated new configuration content.`);
+           addLog(`AI successfully generated new configuration content. Comparison mode enabled.`);
            setConfigContent(updatedConfig);
-           addLog(`Please review the changes in the editor. Click "SAVE & RESTART" to write to disk and restart service.`, 'info');
+           setShowDiff(true);
+           addLog(`Please review the changes (Green: Added, Red: Removed). Click "SAVE & RESTART" to apply.`, 'info');
         }
       } else {
         const currentRaw = chains.map(c => `${c.name} (${c.policy})\n${c.rules.map(r => `${r.num} ${r.target} ${r.source} -> ${r.destination}`).join('\n')}`).join('\n\n');
@@ -716,18 +720,52 @@ export default function App() {
                              <span className="text-[10px] text-gray-500 uppercase font-bold">Unsaved Changes Detection Active</span>
                          </div>
                       </div>
-                      <div className="flex-1 relative">
-                        <textarea 
-                          value={configContent}
-                          onChange={e => setConfigContent(e.target.value)}
-                          className="w-full h-full bg-black/40 border border-white/10 rounded-2xl p-6 font-mono text-sm outline-none focus:border-indigo-500/30 shadow-inner resize-none text-gray-300"
-                          spellCheck={false}
-                        />
-                        {isLoading && (
-                          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px] rounded-2xl flex items-center justify-center">
-                             <Loader2 className="w-8 h-8 animate-spin text-sky-500" />
-                          </div>
-                        )}
+                      <div className="flex-1 relative overflow-hidden bg-black/40 border border-white/10 rounded-2xl flex flex-col">
+                         {showDiff ? (
+                           <div className="flex-1 overflow-auto p-6 font-mono text-xs leading-relaxed">
+                             {(() => {
+                               const originalLines = originalConfigContent.split('\n');
+                               const newLines = configContent.split('\n');
+                               const diffItems: {type: 'add' | 'rem' | 'same', content: string}[] = [];
+                               let i = 0, j = 0;
+                               while(i < originalLines.length || j < newLines.length) {
+                                 if (originalLines[i] === newLines[j]) {
+                                   diffItems.push({type: 'same', content: originalLines[i]});
+                                   i++; j++;
+                                 } else {
+                                   if (i < originalLines.length && !newLines.includes(originalLines[i])) {
+                                     diffItems.push({type: 'rem', content: originalLines[i]});
+                                     i++;
+                                   } else if (j < newLines.length) {
+                                     diffItems.push({type: 'add', content: newLines[j]});
+                                     j++;
+                                   } else {
+                                     i++; j++;
+                                   }
+                                 }
+                                 if(diffItems.length > 2000) break;
+                               }
+                               return diffItems.map((item, idx) => (
+                                 <div key={idx} className={`flex gap-4 px-2 py-0.5 ${item.type === 'add' ? 'bg-green-500/10 text-green-400' : item.type === 'rem' ? 'bg-red-500/10 text-red-500 line-through opacity-70' : 'text-gray-400'}`}>
+                                   <span className="w-6 opacity-30 select-none">{item.type === 'add' ? '+' : item.type === 'rem' ? '-' : ' '}</span>
+                                   <span>{item.content || ' '}</span>
+                                 </div>
+                               ));
+                             })()}
+                           </div>
+                         ) : (
+                           <textarea 
+                             value={configContent}
+                             onChange={e => setConfigContent(e.target.value)}
+                             className="w-full h-full p-6 font-mono text-sm outline-none bg-transparent shadow-inner resize-none text-gray-300"
+                             spellCheck={false}
+                           />
+                         )}
+                         {isLoading && (
+                           <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px] z-10 rounded-2xl flex items-center justify-center">
+                              <Loader2 className="w-8 h-8 animate-spin text-sky-500" />
+                           </div>
+                         )}
                       </div>
                    </div>
                 )}
