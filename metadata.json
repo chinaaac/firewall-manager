@@ -1,0 +1,6 @@
+{
+  "name": "Smart-IPTables Manager",
+  "description": "Multi-node firewall management system powered by AI for intelligent iptables rule generation and synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI-powered Rule Generation", "Multi-node SSH Synchronization", "Real-time Auditing"]
+}

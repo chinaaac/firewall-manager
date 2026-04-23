@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --bg-dark: #0f172a;
+  --panel-dark: #1e293b;
+  --border-dark: #334155;
+  --accent: #38bdf8;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #f1f5f9;
+  font-family: var(--font-sans);
+}
+
+.technical-grid {
+  background-image: radial-gradient(var(--border-dark) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-dark);
+}
